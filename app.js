@@ -57,6 +57,7 @@ let settings = {
   apiKey: '',
   model: 'kilo-auto/efficient',
   systemPrompt: 'You are a helpful assistant.',
+  corsProxy: 'none',
 };
 
 let webSearchEnabled = false;
@@ -77,6 +78,7 @@ function loadSettings() {
   document.getElementById('api-key').value = settings.apiKey;
   document.getElementById('api-url').value = settings.apiUrl;
   document.getElementById('system-prompt').value = settings.systemPrompt;
+  document.getElementById('use-cors-proxy').value = settings.corsProxy || 'none';
   updateModelOptions();
   modelSelect.value = settings.model;
   updateProviderUI();
@@ -89,6 +91,7 @@ function saveSettings() {
   settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
   settings.model = modelSelect.value;
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
+  settings.corsProxy = document.getElementById('use-cors-proxy').value;
   localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
   settingsModal.hidden = true;
 }
@@ -178,13 +181,20 @@ async function sendMessage() {
       await sendOpenAI(streamingEl);
     }
   } catch (err) {
+    console.error('Full error:', err);
+    debugLog(`Error: ${err.message}`, 'error');
+    if (err.cause) debugLog(`Cause: ${err.cause.message || err.cause}`, 'error');
+    if (err.stack) debugLog(`Stack: ${err.stack}`, 'error');
     if (err.name === 'AbortError') {
       streamingEl.classList.remove('streaming');
       if (!streamingEl.textContent) streamingEl.textContent = '(Cancelled)';
     } else {
       streamingEl.classList.remove('streaming');
       streamingEl.classList.add('error');
-      streamingEl.textContent = `Error: ${err.message}`;
+      let errorMsg = `Error: ${err.message}`;
+      if (err.cause) errorMsg += `\nCause: ${err.cause.message || err.cause}`;
+      streamingEl.textContent = errorMsg;
+      responseArea.scrollTop = responseArea.scrollHeight;
     }
   } finally {
     isStreaming = false;
@@ -262,26 +272,48 @@ async function sendGemini(streamingEl) {
 }
 
 async function sendOpenAI(streamingEl) {
-  const res = await fetch(settings.apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: settings.model,
-      messages: [
-        { role: 'system', content: settings.systemPrompt },
-        ...messages,
-      ],
-      stream: true,
-    }),
-    signal: abortController.signal,
-  });
+  let url = settings.apiUrl;
+  if (settings.corsProxy === 'corsproxy.io') {
+    url = `https://corsproxy.io/?${encodeURIComponent(settings.apiUrl)}`;
+  } else if (settings.corsProxy === 'allorigins') {
+    url = `https://allorigins.win/raw?url=${encodeURIComponent(settings.apiUrl)}`;
+  }
+
+  console.log('Fetching:', url, 'Model:', settings.model);
+  debugLog(`Fetching: ${url}`, 'info');
+  debugLog(`Model: ${settings.model}`, 'info');
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${settings.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        messages: [
+          { role: 'system', content: settings.systemPrompt },
+          ...messages,
+        ],
+        stream: true,
+      }),
+      signal: abortController.signal,
+    });
+  } catch (fetchErr) {
+    console.error('Fetch failed:', fetchErr);
+    debugLog(`Fetch failed: ${fetchErr.message}`, 'error');
+    debugLog(`This is likely a CORS issue. Try enabling a CORS proxy in settings.`, 'error');
+    throw new Error(`Network error: ${fetchErr.message}. This is likely a CORS issue. Try enabling a CORS proxy in settings.`);
+  }
+
+  console.log('Response status:', res.status, res.statusText);
+  debugLog(`Response status: ${res.status} ${res.statusText}`, res.ok ? 'info' : 'error');
 
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`API error ${res.status}: ${err}`);
+    throw new Error(`API error ${res.status} (${res.statusText}): ${err}`);
   }
 
   const reader = res.body.getReader();
@@ -470,6 +502,29 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(() => {});
   });
 }
+
+// Debug panel
+const debugPanel = document.getElementById('debug-panel');
+const debugContent = document.getElementById('debug-content');
+const debugBtn = document.getElementById('debug-btn');
+const debugClearBtn = document.getElementById('debug-clear');
+
+function debugLog(msg, type = 'info') {
+  const line = document.createElement('div');
+  line.className = type;
+  const time = new Date().toLocaleTimeString();
+  line.textContent = `[${time}] ${msg}`;
+  debugContent.appendChild(line);
+  debugContent.scrollTop = debugContent.scrollHeight;
+}
+
+debugBtn.addEventListener('click', () => {
+  debugPanel.hidden = !debugPanel.hidden;
+});
+
+debugClearBtn.addEventListener('click', () => {
+  debugContent.innerHTML = '';
+});
 
 // Init
 loadSettings();

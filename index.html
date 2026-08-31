@@ -38,7 +38,10 @@
       <section id="response-section">
         <div class="section-label">
           <span>Response</span>
-          <button id="clear-btn" title="Clear">&#10005;</button>
+          <div class="section-actions">
+            <button id="debug-btn" title="Toggle Debug">&#128065;</button>
+            <button id="clear-btn" title="Clear">&#10005;</button>
+          </div>
         </div>
         <div id="response-area">
           <div class="placeholder">AI response will appear here...</div>
@@ -70,9 +73,13 @@
         <label for="model">Model</label>
         <select id="model"></select>
       </div>
-      <div class="setting-row">
-        <label for="system-prompt">System Prompt</label>
-        <textarea id="system-prompt" placeholder="You are a helpful assistant."></textarea>
+      <div class="setting-row" id="cors-row">
+        <label for="use-cors-proxy">Use CORS Proxy</label>
+        <select id="use-cors-proxy">
+          <option value="none">None</option>
+          <option value="corsproxy.io">corsproxy.io</option>
+          <option value="allorigins">allorigins.win</option>
+        </select>
       </div>
       <div class="modal-actions">
         <button id="save-settings">Save</button>
@@ -81,6 +88,15 @@
     </div>
   </div>
 
+  <div id="debug-panel" hidden>
+    <div class="debug-header">
+      <span>Debug Log</span>
+      <button id="debug-clear">Clear</button>
+    </div>
+    <div id="debug-content"></div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>
+
