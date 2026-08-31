@@ -67,12 +67,16 @@ let abortController = null;
 let deferredPrompt = null;
 
 function loadSettings() {
-  const saved = localStorage.getItem('ai-chat-settings');
-  if (saved) {
-    settings = { ...settings, ...JSON.parse(saved) };
+  try {
+    const saved = localStorage.getItem('ai-chat-settings');
+    if (saved) {
+      settings = { ...settings, ...JSON.parse(saved) };
+    }
+    const savedSearch = localStorage.getItem('ai-chat-websearch');
+    if (savedSearch !== null) webSearchEnabled = savedSearch === 'true';
+  } catch (e) {
+    debugLog(`loadSettings error: ${e.message}`, 'error');
   }
-  const savedSearch = localStorage.getItem('ai-chat-websearch');
-  if (savedSearch !== null) webSearchEnabled = savedSearch === 'true';
 
   providerSelect.value = settings.provider;
   document.getElementById('api-key').value = settings.apiKey;
@@ -80,9 +84,18 @@ function loadSettings() {
   document.getElementById('system-prompt').value = settings.systemPrompt;
   document.getElementById('use-cors-proxy').value = settings.corsProxy || 'none';
   updateModelOptions();
+
+  const validIds = Array.from(modelSelect.options).map(o => o.value);
+  if (!settings.model || !validIds.includes(settings.model)) {
+    settings.model = validIds[0] || '';
+    debugLog(`Model reset to default: "${settings.model}"`, 'info');
+  }
   modelSelect.value = settings.model;
+
   updateProviderUI();
   updateSearchUI();
+
+  debugLog(`Loaded: provider=${settings.provider} model=${settings.model} cors=${settings.corsProxy} keySet=${!!settings.apiKey}`, 'info');
 }
 
 function saveSettings() {
@@ -92,7 +105,12 @@ function saveSettings() {
   settings.model = modelSelect.value;
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
   settings.corsProxy = document.getElementById('use-cors-proxy').value;
-  localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
+  try {
+    localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
+    debugLog(`Settings saved OK: model=${settings.model} cors=${settings.corsProxy}`, 'info');
+  } catch (e) {
+    debugLog(`localStorage.setItem FAILED: ${e.message}. Settings will not persist.`, 'error');
+  }
   settingsModal.hidden = true;
 }
 
@@ -153,6 +171,11 @@ async function sendMessage() {
 
   if (!settings.apiKey) {
     appendMessage('Please set your API key in settings (top-right gear icon).', 'error');
+    return;
+  }
+
+  if (!settings.model) {
+    appendMessage('No model selected. Open settings and choose a model, then Save.', 'error');
     return;
   }
 
