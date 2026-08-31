@@ -26,6 +26,24 @@ const GEMINI_MODELS = [
   { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
 ];
 
+const KILO_MODELS = [
+  { id: 'anthropic/claude-opus-4.7', name: 'Claude Opus 4.7' },
+  { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
+  { id: 'anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5' },
+  { id: 'openai/gpt-5.4', name: 'GPT-5.4' },
+  { id: 'openai/gpt-5.4-mini', name: 'GPT-5.4 Mini' },
+  { id: 'google/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
+  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { id: 'x-ai/grok-4', name: 'Grok 4' },
+  { id: 'deepseek/deepseek-v3.2', name: 'DeepSeek V3.2' },
+  { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
+  { id: 'kilo-auto/frontier', name: 'Auto Frontier' },
+  { id: 'kilo-auto/efficient', name: 'Auto Efficient' },
+  { id: 'kilo-auto/free', name: 'Auto Free' },
+  { id: 'stepfun/step-3.7-flash:free', name: 'Step 3.7 Flash (Free)' },
+  { id: 'openrouter/free', name: 'OpenRouter Free' },
+];
+
 const OPENAI_MODELS = [
   { id: 'gpt-4o', name: 'GPT-4o' },
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
@@ -34,10 +52,10 @@ const OPENAI_MODELS = [
 ];
 
 let settings = {
-  provider: 'gemini',
-  apiUrl: 'https://api.openai.com/v1/chat/completions',
+  provider: 'kilo',
+  apiUrl: 'https://api.kilo.ai/api/gateway/chat/completions',
   apiKey: '',
-  model: 'gemini-2.5-flash',
+  model: 'kilo-auto/efficient',
   systemPrompt: 'You are a helpful assistant.',
 };
 
@@ -77,7 +95,14 @@ function saveSettings() {
 
 function updateModelOptions() {
   modelSelect.innerHTML = '';
-  const models = settings.provider === 'gemini' ? GEMINI_MODELS : OPENAI_MODELS;
+  let models;
+  if (settings.provider === 'gemini') {
+    models = GEMINI_MODELS;
+  } else if (settings.provider === 'kilo') {
+    models = KILO_MODELS;
+  } else {
+    models = OPENAI_MODELS;
+  }
   models.forEach(m => {
     const opt = document.createElement('option');
     opt.value = m.id;
@@ -87,10 +112,10 @@ function updateModelOptions() {
 }
 
 function updateProviderUI() {
-  if (settings.provider === 'gemini') {
-    apiUrlRow.hidden = true;
-  } else {
+  if (settings.provider === 'openai') {
     apiUrlRow.hidden = false;
+  } else {
+    apiUrlRow.hidden = true;
   }
   searchToggle.style.display = settings.provider === 'gemini' ? 'flex' : 'none';
 }
@@ -403,6 +428,8 @@ providerSelect.addEventListener('change', () => {
   updateSearchUI();
   if (settings.provider === 'gemini') {
     modelSelect.value = 'gemini-2.5-flash';
+  } else if (settings.provider === 'kilo') {
+    modelSelect.value = 'kilo-auto/efficient';
   } else {
     modelSelect.value = 'gpt-4o-mini';
   }
