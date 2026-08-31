@@ -300,8 +300,69 @@ header h1 {
   z-index: 1001;
 }
 
-.setting-row select:focus {
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-toggle {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.custom-toggle:focus,
+.custom-toggle:hover {
   border-color: var(--accent);
+}
+
+.custom-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 2000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.custom-options[hidden] {
+  display: none;
+}
+
+.custom-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.custom-option:hover {
+  background: var(--border);
+}
+
+.custom-option.selected {
+  background: var(--accent);
+  color: #fff;
 }
 
 .setting-row textarea {

@@ -14,7 +14,8 @@ const searchToggle = document.getElementById('search-toggle');
 const searchBadge = document.getElementById('search-badge');
 const providerSelect = document.getElementById('provider');
 const apiUrlRow = document.getElementById('api-url-row');
-const modelSelect = document.getElementById('model');
+const modelToggle = document.getElementById('model-toggle');
+const modelOptions = document.getElementById('model-options');
 
 const GEMINI_MODELS = [
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
@@ -85,12 +86,13 @@ function loadSettings() {
   document.getElementById('use-cors-proxy').value = settings.corsProxy || 'none';
   updateModelOptions();
 
-  const validIds = Array.from(modelSelect.options).map(o => o.value);
+  const validIds = Array.from(modelOptions.children).map(o => o.dataset.value);
   if (!settings.model || !validIds.includes(settings.model)) {
     settings.model = validIds[0] || '';
     debugLog(`Model reset to default: "${settings.model}"`, 'info');
   }
-  modelSelect.value = settings.model;
+  const selBtn = Array.from(modelOptions.children).find(o => o.dataset.value === settings.model);
+  modelToggle.textContent = selBtn ? selBtn.textContent : 'Select a model…';
 
   updateProviderUI();
   updateSearchUI();
@@ -102,7 +104,7 @@ function saveSettings() {
   settings.provider = providerSelect.value;
   settings.apiKey = document.getElementById('api-key').value.trim();
   settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
-  settings.model = modelSelect.value;
+  settings.model = settings.model || (modelOptions.children[0] && modelOptions.children[0].dataset.value) || '';
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
   settings.corsProxy = document.getElementById('use-cors-proxy').value;
   try {
@@ -115,7 +117,6 @@ function saveSettings() {
 }
 
 function updateModelOptions() {
-  modelSelect.innerHTML = '';
   let models;
   if (settings.provider === 'gemini') {
     models = GEMINI_MODELS;
@@ -124,11 +125,22 @@ function updateModelOptions() {
   } else {
     models = OPENAI_MODELS;
   }
+  modelOptions.innerHTML = '';
   models.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.name;
-    modelSelect.appendChild(opt);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'custom-option';
+    btn.dataset.value = m.id;
+    btn.textContent = m.name;
+    if (m.id === settings.model) btn.classList.add('selected');
+    btn.addEventListener('click', () => {
+      settings.model = m.id;
+      modelToggle.textContent = m.name;
+      Array.from(modelOptions.children).forEach(c => c.classList.remove('selected'));
+      btn.classList.add('selected');
+      modelOptions.hidden = true;
+    });
+    modelOptions.appendChild(btn);
   });
 }
 
@@ -490,15 +502,25 @@ userInput.addEventListener('input', autoResize);
 
 providerSelect.addEventListener('change', () => {
   settings.provider = providerSelect.value;
+  let defaultModel = 'kilo-auto/efficient';
+  if (settings.provider === 'gemini') defaultModel = 'gemini-2.5-flash';
+  else if (settings.provider === 'openai') defaultModel = 'gpt-4o-mini';
+  settings.model = defaultModel;
   updateModelOptions();
   updateProviderUI();
   updateSearchUI();
-  if (settings.provider === 'gemini') {
-    modelSelect.value = 'gemini-2.5-flash';
-  } else if (settings.provider === 'kilo') {
-    modelSelect.value = 'kilo-auto/efficient';
-  } else {
-    modelSelect.value = 'gpt-4o-mini';
+  const selBtn = Array.from(modelOptions.children).find(o => o.dataset.value === settings.model);
+  modelToggle.textContent = selBtn ? selBtn.textContent : 'Select a model…';
+});
+
+modelToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  modelOptions.hidden = !modelOptions.hidden;
+});
+
+document.addEventListener('click', (e) => {
+  if (!document.getElementById('model-select').contains(e.target)) {
+    modelOptions.hidden = true;
   }
 });
 

@@ -70,8 +70,11 @@
         <input type="text" id="api-url" placeholder="https://api.kilo.ai/api/gateway/chat/completions" />
       </div>
       <div class="setting-row">
-        <label for="model">Model</label>
-        <select id="model"></select>
+        <label for="model-toggle">Model</label>
+        <div class="custom-select" id="model-select">
+          <button type="button" id="model-toggle" class="custom-toggle">Select a model…</button>
+          <div class="custom-options" id="model-options" hidden></div>
+        </div>
       </div>
       <div class="setting-row" id="cors-row">
         <label for="use-cors-proxy">Use CORS Proxy</label>
