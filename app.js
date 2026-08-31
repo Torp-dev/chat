@@ -1,4 +1,4 @@
-const BUILD = 'v6';
+const BUILD = 'v7';
 
 const userInput = document.getElementById('user-input');
 const responseArea = document.getElementById('response-area');
@@ -69,7 +69,6 @@ let settings = {
   apiKey: '',
   model: 'kilo-auto/efficient',
   systemPrompt: 'You are a helpful assistant.',
-  corsProxy: 'none',
 };
 
 let webSearchEnabled = false;
@@ -107,7 +106,6 @@ function loadSettings() {
   document.getElementById('api-key').value = settings.apiKey;
   document.getElementById('api-url').value = settings.apiUrl;
   document.getElementById('system-prompt').value = settings.systemPrompt;
-  document.getElementById('use-cors-proxy').value = settings.corsProxy || 'none';
   updateModelList();
   if (!settings.model || !getModelById(settings.model)) {
     settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
@@ -115,7 +113,7 @@ function loadSettings() {
   selectModelInUI(settings.model);
   updateProviderUI();
   updateSearchUI();
-  debugLog(`Build ${BUILD} loaded: provider=${settings.provider} model=${settings.model} cors=${settings.corsProxy} keySet=${!!settings.apiKey}`, 'info');
+  debugLog(`Build ${BUILD} loaded: provider=${settings.provider} model=${settings.model} keySet=${!!settings.apiKey}`, 'info');
 }
 
 function getModelsForProvider() {
@@ -161,13 +159,12 @@ function saveSettings() {
   settings.apiKey = document.getElementById('api-key').value.trim();
   settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
-  settings.corsProxy = document.getElementById('use-cors-proxy').value;
   if (!settings.model || !getModelById(settings.model)) {
     settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
   }
   try {
     localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
-    debugLog(`Settings saved OK: model=${settings.model} cors=${settings.corsProxy} provider=${settings.provider}`, 'info');
+    debugLog(`Settings saved OK: model=${settings.model} provider=${settings.provider}`, 'info');
   } catch (e) {
     debugLog(`localStorage.setItem FAILED: ${e.message}`, 'error');
   }
@@ -249,20 +246,14 @@ async function sendMessage() {
     console.error('Full error:', err);
     debugLog(`Error name: ${err.name}`, 'error');
     debugLog(`Error message: ${err.message}`, 'error');
-    debugLog(`Error cause: ${err.cause || 'none'}`, 'error');
-    debugLog(`Provider: ${settings.provider} URL: ${settings.apiUrl} CORS: ${settings.corsProxy} Model: ${settings.model}`, 'error');
+    debugLog(`Provider: ${settings.provider} URL: ${settings.apiUrl} Model: ${settings.model}`, 'error');
     if (err.name === 'AbortError') {
       streamingEl.classList.remove('streaming');
       if (!streamingEl.textContent) streamingEl.textContent = '(Cancelled)';
     } else {
       streamingEl.classList.remove('streaming');
       streamingEl.classList.add('error');
-      let errorMsg = `Error: ${err.message}`;
-      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        errorMsg += '\n\nLikely CORS. Try Settings > Use CORS Proxy > corsproxy.io';
-        debugLog('DIAGNOSIS: CORS block. Enable CORS proxy.', 'error');
-      }
-      streamingEl.textContent = errorMsg;
+      streamingEl.textContent = `Error: ${err.message}`;
       responseArea.scrollTop = responseArea.scrollHeight;
     }
   } finally {
@@ -298,13 +289,7 @@ async function sendGemini(streamingEl) {
 }
 
 async function sendOpenAI(streamingEl) {
-  let url = settings.apiUrl;
-  if (settings.corsProxy === 'corsproxy.io') {
-    url = `https://corsproxy.io/?${encodeURIComponent(settings.apiUrl)}`;
-  } else if (settings.corsProxy === 'allorigins') {
-    url = `https://allorigins.win/raw?url=${encodeURIComponent(settings.apiUrl)}`;
-  }
-
+  const url = settings.apiUrl;
   debugLog(`POST ${url} model=${settings.model}`, 'info');
 
   let res;
@@ -326,8 +311,8 @@ async function sendOpenAI(streamingEl) {
       signal: abortController.signal,
     });
   } catch (fetchErr) {
-    debugLog(`Fetch failed: ${fetchErr.message}. Likely CORS.`, 'error');
-    throw new Error(`Network error: ${fetchErr.message}. Try enabling a CORS proxy in settings.`);
+    debugLog(`Fetch failed: ${fetchErr.message}`, 'error');
+    throw new Error(`Network error: ${fetchErr.message}`);
   }
 
   debugLog(`Response: ${res.status} ${res.statusText}`, res.ok ? 'info' : 'error');
