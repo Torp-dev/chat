@@ -182,9 +182,14 @@ async function sendMessage() {
     }
   } catch (err) {
     console.error('Full error:', err);
-    debugLog(`Error: ${err.message}`, 'error');
-    if (err.cause) debugLog(`Cause: ${err.cause.message || err.cause}`, 'error');
-    if (err.stack) debugLog(`Stack: ${err.stack}`, 'error');
+    debugLog(`Error name: ${err.name}`, 'error');
+    debugLog(`Error message: ${err.message}`, 'error');
+    debugLog(`Error cause: ${err.cause || 'none'}`, 'error');
+    debugLog(`Error stack: ${err.stack || 'none'}`, 'error');
+    debugLog(`Provider: ${settings.provider}`, 'error');
+    debugLog(`API URL: ${settings.apiUrl}`, 'error');
+    debugLog(`CORS Proxy: ${settings.corsProxy || 'none'}`, 'error');
+    debugLog(`Model: ${settings.model}`, 'error');
     if (err.name === 'AbortError') {
       streamingEl.classList.remove('streaming');
       if (!streamingEl.textContent) streamingEl.textContent = '(Cancelled)';
@@ -192,6 +197,13 @@ async function sendMessage() {
       streamingEl.classList.remove('streaming');
       streamingEl.classList.add('error');
       let errorMsg = `Error: ${err.message}`;
+      if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
+        errorMsg += '\n\nThis is likely a CORS issue.';
+        errorMsg += '\nTry: Settings > Use CORS Proxy > corsproxy.io';
+        errorMsg += '\nOr use a different API endpoint.';
+        debugLog('DIAGNOSIS: CORS error - the browser blocked the request.', 'error');
+        debugLog('SOLUTION: Enable CORS proxy in settings.', 'error');
+      }
       if (err.cause) errorMsg += `\nCause: ${err.cause.message || err.cause}`;
       streamingEl.textContent = errorMsg;
       responseArea.scrollTop = responseArea.scrollHeight;
@@ -516,6 +528,9 @@ function debugLog(msg, type = 'info') {
   line.textContent = `[${time}] ${msg}`;
   debugContent.appendChild(line);
   debugContent.scrollTop = debugContent.scrollHeight;
+  if (type === 'error' && debugPanel.hidden) {
+    debugPanel.hidden = false;
+  }
 }
 
 debugBtn.addEventListener('click', () => {
