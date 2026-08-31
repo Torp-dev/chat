@@ -1,3 +1,5 @@
+const BUILD = 'v6';
+
 const userInput = document.getElementById('user-input');
 const responseArea = document.getElementById('response-area');
 const sendBtn = document.getElementById('send-btn');
@@ -7,6 +9,7 @@ const installBtn = document.getElementById('install-btn');
 const settingsModal = document.getElementById('settings-modal');
 const saveSettingsBtn = document.getElementById('save-settings');
 const closeSettingsBtn = document.getElementById('close-settings');
+const resetDataBtn = document.getElementById('reset-data');
 const divider = document.getElementById('divider');
 const inputSection = document.getElementById('input-section');
 const responseSection = document.getElementById('response-section');
@@ -14,8 +17,16 @@ const searchToggle = document.getElementById('search-toggle');
 const searchBadge = document.getElementById('search-badge');
 const providerSelect = document.getElementById('provider');
 const apiUrlRow = document.getElementById('api-url-row');
-const modelToggle = document.getElementById('model-toggle');
-const modelOptions = document.getElementById('model-options');
+const modelList = document.getElementById('model-list');
+const debugPanel = document.getElementById('debug-panel');
+const debugContent = document.getElementById('debug-content');
+const debugBtn = document.getElementById('debug-btn');
+const debugClearBtn = document.getElementById('debug-clear');
+
+const versionTag = document.getElementById('version-tag');
+const versionTagDebug = document.getElementById('version-tag-debug');
+if (versionTag) versionTag.textContent = BUILD;
+if (versionTagDebug) versionTagDebug.textContent = BUILD;
 
 const GEMINI_MODELS = [
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
@@ -67,11 +78,24 @@ let isStreaming = false;
 let abortController = null;
 let deferredPrompt = null;
 
+function debugLog(msg, type = 'info') {
+  const line = document.createElement('div');
+  line.className = type;
+  const time = new Date().toLocaleTimeString();
+  line.textContent = `[${time}] ${msg}`;
+  debugContent.appendChild(line);
+  debugContent.scrollTop = debugContent.scrollHeight;
+  if (type === 'error' && debugPanel.hidden) {
+    debugPanel.hidden = false;
+  }
+}
+
 function loadSettings() {
   try {
     const saved = localStorage.getItem('ai-chat-settings');
     if (saved) {
-      settings = { ...settings, ...JSON.parse(saved) };
+      const parsed = JSON.parse(saved);
+      settings = { ...settings, ...parsed };
     }
     const savedSearch = localStorage.getItem('ai-chat-websearch');
     if (savedSearch !== null) webSearchEnabled = savedSearch === 'true';
@@ -84,64 +108,70 @@ function loadSettings() {
   document.getElementById('api-url').value = settings.apiUrl;
   document.getElementById('system-prompt').value = settings.systemPrompt;
   document.getElementById('use-cors-proxy').value = settings.corsProxy || 'none';
-  updateModelOptions();
-
-  const validIds = Array.from(modelOptions.children).map(o => o.dataset.value);
-  if (!settings.model || !validIds.includes(settings.model)) {
-    settings.model = validIds[0] || '';
-    debugLog(`Model reset to default: "${settings.model}"`, 'info');
+  updateModelList();
+  if (!settings.model || !getModelById(settings.model)) {
+    settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
   }
-  const selBtn = Array.from(modelOptions.children).find(o => o.dataset.value === settings.model);
-  modelToggle.textContent = selBtn ? selBtn.textContent : 'Select a model…';
-
+  selectModelInUI(settings.model);
   updateProviderUI();
   updateSearchUI();
+  debugLog(`Build ${BUILD} loaded: provider=${settings.provider} model=${settings.model} cors=${settings.corsProxy} keySet=${!!settings.apiKey}`, 'info');
+}
 
-  debugLog(`Loaded: provider=${settings.provider} model=${settings.model} cors=${settings.corsProxy} keySet=${!!settings.apiKey}`, 'info');
+function getModelsForProvider() {
+  if (settings.provider === 'gemini') return GEMINI_MODELS;
+  if (settings.provider === 'kilo') return KILO_MODELS;
+  return OPENAI_MODELS;
+}
+
+function getModelById(id) {
+  return getModelsForProvider().find(m => m.id === id);
+}
+
+function updateModelList() {
+  const models = getModelsForProvider();
+  modelList.innerHTML = '';
+  models.forEach(m => {
+    const row = document.createElement('label');
+    row.className = 'model-row';
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'model';
+    radio.value = m.id;
+    radio.checked = (m.id === settings.model);
+    radio.addEventListener('change', () => {
+      settings.model = m.id;
+      debugLog(`Model selected: ${m.id}`, 'info');
+    });
+    const span = document.createElement('span');
+    span.textContent = m.name;
+    row.appendChild(radio);
+    row.appendChild(span);
+    modelList.appendChild(row);
+  });
+}
+
+function selectModelInUI(id) {
+  const radios = modelList.querySelectorAll('input[type=radio]');
+  radios.forEach(r => r.checked = (r.value === id));
 }
 
 function saveSettings() {
   settings.provider = providerSelect.value;
   settings.apiKey = document.getElementById('api-key').value.trim();
   settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
-  settings.model = settings.model || (modelOptions.children[0] && modelOptions.children[0].dataset.value) || '';
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
   settings.corsProxy = document.getElementById('use-cors-proxy').value;
+  if (!settings.model || !getModelById(settings.model)) {
+    settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
+  }
   try {
     localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
-    debugLog(`Settings saved OK: model=${settings.model} cors=${settings.corsProxy}`, 'info');
+    debugLog(`Settings saved OK: model=${settings.model} cors=${settings.corsProxy} provider=${settings.provider}`, 'info');
   } catch (e) {
-    debugLog(`localStorage.setItem FAILED: ${e.message}. Settings will not persist.`, 'error');
+    debugLog(`localStorage.setItem FAILED: ${e.message}`, 'error');
   }
   settingsModal.hidden = true;
-}
-
-function updateModelOptions() {
-  let models;
-  if (settings.provider === 'gemini') {
-    models = GEMINI_MODELS;
-  } else if (settings.provider === 'kilo') {
-    models = KILO_MODELS;
-  } else {
-    models = OPENAI_MODELS;
-  }
-  modelOptions.innerHTML = '';
-  models.forEach(m => {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'custom-option';
-    btn.dataset.value = m.id;
-    btn.textContent = m.name;
-    if (m.id === settings.model) btn.classList.add('selected');
-    btn.addEventListener('click', () => {
-      settings.model = m.id;
-      modelToggle.textContent = m.name;
-      Array.from(modelOptions.children).forEach(c => c.classList.remove('selected'));
-      btn.classList.add('selected');
-      modelOptions.hidden = true;
-    });
-    modelOptions.appendChild(btn);
-  });
 }
 
 function updateProviderUI() {
@@ -220,11 +250,7 @@ async function sendMessage() {
     debugLog(`Error name: ${err.name}`, 'error');
     debugLog(`Error message: ${err.message}`, 'error');
     debugLog(`Error cause: ${err.cause || 'none'}`, 'error');
-    debugLog(`Error stack: ${err.stack || 'none'}`, 'error');
-    debugLog(`Provider: ${settings.provider}`, 'error');
-    debugLog(`API URL: ${settings.apiUrl}`, 'error');
-    debugLog(`CORS Proxy: ${settings.corsProxy || 'none'}`, 'error');
-    debugLog(`Model: ${settings.model}`, 'error');
+    debugLog(`Provider: ${settings.provider} URL: ${settings.apiUrl} CORS: ${settings.corsProxy} Model: ${settings.model}`, 'error');
     if (err.name === 'AbortError') {
       streamingEl.classList.remove('streaming');
       if (!streamingEl.textContent) streamingEl.textContent = '(Cancelled)';
@@ -233,13 +259,9 @@ async function sendMessage() {
       streamingEl.classList.add('error');
       let errorMsg = `Error: ${err.message}`;
       if (err.message === 'Failed to fetch' || err.name === 'TypeError') {
-        errorMsg += '\n\nThis is likely a CORS issue.';
-        errorMsg += '\nTry: Settings > Use CORS Proxy > corsproxy.io';
-        errorMsg += '\nOr use a different API endpoint.';
-        debugLog('DIAGNOSIS: CORS error - the browser blocked the request.', 'error');
-        debugLog('SOLUTION: Enable CORS proxy in settings.', 'error');
+        errorMsg += '\n\nLikely CORS. Try Settings > Use CORS Proxy > corsproxy.io';
+        debugLog('DIAGNOSIS: CORS block. Enable CORS proxy.', 'error');
       }
-      if (err.cause) errorMsg += `\nCause: ${err.cause.message || err.cause}`;
       streamingEl.textContent = errorMsg;
       responseArea.scrollTop = responseArea.scrollHeight;
     }
@@ -252,20 +274,15 @@ async function sendMessage() {
 
 async function sendGemini(streamingEl) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?key=${settings.apiKey}&alt=sse`;
-
   const contents = messages.map(m => ({
     role: m.role === 'assistant' ? 'model' : m.role,
     parts: [{ text: m.content }],
   }));
-
   const body = {
     contents,
     systemInstruction: settings.systemPrompt ? { parts: [{ text: settings.systemPrompt }] } : undefined,
   };
-
-  if (webSearchEnabled) {
-    body.tools = [{ googleSearch: {} }];
-  }
+  if (webSearchEnabled) body.tools = [{ googleSearch: {} }];
 
   const res = await fetch(url, {
     method: 'POST',
@@ -273,49 +290,11 @@ async function sendGemini(streamingEl) {
     body: JSON.stringify(body),
     signal: abortController.signal,
   });
-
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`Gemini API error ${res.status}: ${err.error?.message || res.statusText}`);
+    throw new Error(`Gemini API ${res.status}: ${err.error?.message || res.statusText}`);
   }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let fullText = '';
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || !trimmed.startsWith('data: ')) continue;
-      const data = trimmed.slice(6);
-
-      try {
-        const parsed = JSON.parse(data);
-        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-          fullText += text;
-          streamingEl.textContent = fullText;
-          responseArea.scrollTop = responseArea.scrollHeight;
-        }
-      } catch (e) {}
-    }
-  }
-
-  streamingEl.classList.remove('streaming');
-  if (fullText) {
-    messages.push({ role: 'assistant', content: fullText });
-  } else {
-    streamingEl.textContent = '(No response received)';
-    streamingEl.classList.add('error');
-  }
+  await readSSE(res, streamingEl, (parsed) => parsed.candidates?.[0]?.content?.parts?.[0]?.text);
 }
 
 async function sendOpenAI(streamingEl) {
@@ -326,9 +305,7 @@ async function sendOpenAI(streamingEl) {
     url = `https://allorigins.win/raw?url=${encodeURIComponent(settings.apiUrl)}`;
   }
 
-  console.log('Fetching:', url, 'Model:', settings.model);
-  debugLog(`Fetching: ${url}`, 'info');
-  debugLog(`Model: ${settings.model}`, 'info');
+  debugLog(`POST ${url} model=${settings.model}`, 'info');
 
   let res;
   try {
@@ -349,51 +326,45 @@ async function sendOpenAI(streamingEl) {
       signal: abortController.signal,
     });
   } catch (fetchErr) {
-    console.error('Fetch failed:', fetchErr);
-    debugLog(`Fetch failed: ${fetchErr.message}`, 'error');
-    debugLog(`This is likely a CORS issue. Try enabling a CORS proxy in settings.`, 'error');
-    throw new Error(`Network error: ${fetchErr.message}. This is likely a CORS issue. Try enabling a CORS proxy in settings.`);
+    debugLog(`Fetch failed: ${fetchErr.message}. Likely CORS.`, 'error');
+    throw new Error(`Network error: ${fetchErr.message}. Try enabling a CORS proxy in settings.`);
   }
 
-  console.log('Response status:', res.status, res.statusText);
-  debugLog(`Response status: ${res.status} ${res.statusText}`, res.ok ? 'info' : 'error');
-
+  debugLog(`Response: ${res.status} ${res.statusText}`, res.ok ? 'info' : 'error');
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`API error ${res.status} (${res.statusText}): ${err}`);
+    throw new Error(`API ${res.status} ${res.statusText}: ${err}`);
   }
+  await readSSE(res, streamingEl, (parsed) => parsed.choices?.[0]?.delta?.content);
+}
 
+async function readSSE(res, streamingEl, extractText) {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let fullText = '';
   let buffer = '';
-
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split('\n');
     buffer = lines.pop() || '';
-
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith('data: ')) continue;
       const data = trimmed.slice(6);
       if (data === '[DONE]') break;
-
       try {
         const parsed = JSON.parse(data);
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
-          fullText += delta;
+        const text = extractText(parsed);
+        if (text) {
+          fullText += text;
           streamingEl.textContent = fullText;
           responseArea.scrollTop = responseArea.scrollHeight;
         }
       } catch (e) {}
     }
   }
-
   streamingEl.classList.remove('streaming');
   if (fullText) {
     messages.push({ role: 'assistant', content: fullText });
@@ -440,7 +411,6 @@ divider.addEventListener('mousedown', (e) => {
     inputSection.style.flex = `1 1 ${inputPercent}%`;
     responseSection.style.flex = `1 1 ${responsePercent}%`;
   }
-
   function onUp() {
     divider.classList.remove('dragging');
     document.body.style.cursor = '';
@@ -448,12 +418,10 @@ divider.addEventListener('mousedown', (e) => {
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
   }
-
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 });
 
-// Touch support for divider
 divider.addEventListener('touchstart', (e) => {
   const startY = e.touches[0].clientY;
   const startInputHeight = inputSection.offsetHeight;
@@ -475,13 +443,11 @@ divider.addEventListener('touchstart', (e) => {
     inputSection.style.flex = `1 1 ${inputPercent}%`;
     responseSection.style.flex = `1 1 ${responsePercent}%`;
   }
-
   function onEnd() {
     divider.classList.remove('dragging');
     document.removeEventListener('touchmove', onMove);
     document.removeEventListener('touchend', onEnd);
   }
-
   document.addEventListener('touchmove', onMove, { passive: false });
   document.addEventListener('touchend', onEnd);
 });
@@ -502,29 +468,18 @@ userInput.addEventListener('input', autoResize);
 
 providerSelect.addEventListener('change', () => {
   settings.provider = providerSelect.value;
-  let defaultModel = 'kilo-auto/efficient';
-  if (settings.provider === 'gemini') defaultModel = 'gemini-2.5-flash';
-  else if (settings.provider === 'openai') defaultModel = 'gpt-4o-mini';
-  settings.model = defaultModel;
-  updateModelOptions();
+  let def = 'kilo-auto/efficient';
+  if (settings.provider === 'gemini') def = 'gemini-2.5-flash';
+  else if (settings.provider === 'openai') def = 'gpt-4o-mini';
+  settings.model = def;
+  updateModelList();
   updateProviderUI();
   updateSearchUI();
-  const selBtn = Array.from(modelOptions.children).find(o => o.dataset.value === settings.model);
-  modelToggle.textContent = selBtn ? selBtn.textContent : 'Select a model…';
-});
-
-modelToggle.addEventListener('click', (e) => {
-  e.stopPropagation();
-  modelOptions.hidden = !modelOptions.hidden;
-});
-
-document.addEventListener('click', (e) => {
-  if (!document.getElementById('model-select').contains(e.target)) {
-    modelOptions.hidden = true;
-  }
 });
 
 settingsBtn.addEventListener('click', () => {
+  updateModelList();
+  selectModelInUI(settings.model);
   settingsModal.hidden = false;
 });
 
@@ -538,13 +493,32 @@ settingsModal.addEventListener('click', (e) => {
   if (e.target === settingsModal) settingsModal.hidden = true;
 });
 
+resetDataBtn.addEventListener('click', async () => {
+  if (!confirm('Clear all saved data and reload?')) return;
+  localStorage.removeItem('ai-chat-settings');
+  localStorage.removeItem('ai-chat-websearch');
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for (const r of regs) await r.unregister();
+  }
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => caches.delete(k)));
+  }
+  location.reload(true);
+});
+
+debugBtn.addEventListener('click', () => {
+  debugPanel.hidden = !debugPanel.hidden;
+});
+debugClearBtn.addEventListener('click', () => { debugContent.innerHTML = ''; });
+
 // PWA install
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
   installBtn.hidden = false;
 });
-
 installBtn.addEventListener('click', async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
@@ -553,38 +527,16 @@ installBtn.addEventListener('click', async () => {
   installBtn.hidden = true;
 });
 
-// Service worker
+// Self-destruct any old service worker and clear its caches so the user
+// always gets the latest app.js. Then never register a new one.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.getRegistrations().then(regs => {
+    for (const r of regs) r.unregister();
   });
-}
-
-// Debug panel
-const debugPanel = document.getElementById('debug-panel');
-const debugContent = document.getElementById('debug-content');
-const debugBtn = document.getElementById('debug-btn');
-const debugClearBtn = document.getElementById('debug-clear');
-
-function debugLog(msg, type = 'info') {
-  const line = document.createElement('div');
-  line.className = type;
-  const time = new Date().toLocaleTimeString();
-  line.textContent = `[${time}] ${msg}`;
-  debugContent.appendChild(line);
-  debugContent.scrollTop = debugContent.scrollHeight;
-  if (type === 'error' && debugPanel.hidden) {
-    debugPanel.hidden = false;
+  if ('caches' in window) {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
   }
 }
-
-debugBtn.addEventListener('click', () => {
-  debugPanel.hidden = !debugPanel.hidden;
-});
-
-debugClearBtn.addEventListener('click', () => {
-  debugContent.innerHTML = '';
-});
 
 // Init
 loadSettings();

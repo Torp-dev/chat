@@ -365,6 +365,63 @@ header h1 {
   color: #fff;
 }
 
+.version-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  margin-left: 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  vertical-align: middle;
+}
+
+.model-list {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.model-row:last-child {
+  border-bottom: none;
+}
+
+.model-row:hover {
+  background: var(--border);
+}
+
+.model-row input[type=radio] {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.modal-actions .spacer {
+  flex: 1;
+}
+
+.modal-actions button.danger {
+  background: #5a1a1a;
+  border-color: #8b2c2c;
+  color: #fff;
+}
+
+.modal-actions button.danger:hover {
+  background: #8b2c2c;
+}
+
 .setting-row textarea {
   resize: vertical;
   min-height: 60px;
