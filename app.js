@@ -10,14 +10,38 @@ const closeSettingsBtn = document.getElementById('close-settings');
 const divider = document.getElementById('divider');
 const inputSection = document.getElementById('input-section');
 const responseSection = document.getElementById('response-section');
+const searchToggle = document.getElementById('search-toggle');
+const searchBadge = document.getElementById('search-badge');
+const providerSelect = document.getElementById('provider');
+const apiUrlRow = document.getElementById('api-url-row');
+const modelSelect = document.getElementById('model');
+
+const GEMINI_MODELS = [
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
+  { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3.1 Flash Lite' },
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash' },
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
+];
+
+const OPENAI_MODELS = [
+  { id: 'gpt-4o', name: 'GPT-4o' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini' },
+  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
+  { id: 'o1-mini', name: 'o1 Mini' },
+];
 
 let settings = {
+  provider: 'gemini',
   apiUrl: 'https://api.openai.com/v1/chat/completions',
   apiKey: '',
-  model: 'gpt-4o-mini',
+  model: 'gemini-2.5-flash',
   systemPrompt: 'You are a helpful assistant.',
 };
 
+let webSearchEnabled = false;
 let messages = [];
 let isStreaming = false;
 let abortController = null;
@@ -28,19 +52,66 @@ function loadSettings() {
   if (saved) {
     settings = { ...settings, ...JSON.parse(saved) };
   }
-  document.getElementById('api-url').value = settings.apiUrl;
+  const savedSearch = localStorage.getItem('ai-chat-websearch');
+  if (savedSearch !== null) webSearchEnabled = savedSearch === 'true';
+
+  providerSelect.value = settings.provider;
   document.getElementById('api-key').value = settings.apiKey;
-  document.getElementById('model').value = settings.model;
+  document.getElementById('api-url').value = settings.apiUrl;
   document.getElementById('system-prompt').value = settings.systemPrompt;
+  updateModelOptions();
+  modelSelect.value = settings.model;
+  updateProviderUI();
+  updateSearchUI();
 }
 
 function saveSettings() {
-  settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
+  settings.provider = providerSelect.value;
   settings.apiKey = document.getElementById('api-key').value.trim();
-  settings.model = document.getElementById('model').value.trim() || settings.model;
+  settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
+  settings.model = modelSelect.value;
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
   localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
   settingsModal.hidden = true;
+}
+
+function updateModelOptions() {
+  modelSelect.innerHTML = '';
+  const models = settings.provider === 'gemini' ? GEMINI_MODELS : OPENAI_MODELS;
+  models.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name;
+    modelSelect.appendChild(opt);
+  });
+}
+
+function updateProviderUI() {
+  if (settings.provider === 'gemini') {
+    apiUrlRow.hidden = true;
+  } else {
+    apiUrlRow.hidden = false;
+  }
+  searchToggle.style.display = settings.provider === 'gemini' ? 'flex' : 'none';
+}
+
+function updateSearchUI() {
+  if (webSearchEnabled && settings.provider === 'gemini') {
+    searchBadge.hidden = false;
+    searchToggle.style.borderColor = 'var(--accent)';
+    searchToggle.style.color = 'var(--accent)';
+  } else {
+    searchBadge.hidden = true;
+    searchToggle.style.borderColor = 'var(--border)';
+    searchToggle.style.color = 'var(--text)';
+  }
+}
+
+function toggleWebSearch() {
+  if (settings.provider !== 'gemini') return;
+  webSearchEnabled = !webSearchEnabled;
+  localStorage.setItem('ai-chat-websearch', webSearchEnabled);
+  updateSearchUI();
 }
 
 function clearResponse() {
@@ -76,65 +147,10 @@ async function sendMessage() {
   abortController = new AbortController();
 
   try {
-    const res = await fetch(settings.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: settings.model,
-        messages: [
-          { role: 'system', content: settings.systemPrompt },
-          ...messages,
-        ],
-        stream: true,
-      }),
-      signal: abortController.signal,
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(`API error ${res.status}: ${err}`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || !trimmed.startsWith('data: ')) continue;
-        const data = trimmed.slice(6);
-        if (data === '[DONE]') break;
-
-        try {
-          const parsed = JSON.parse(data);
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (delta) {
-            fullText += delta;
-            streamingEl.textContent = fullText;
-            responseArea.scrollTop = responseArea.scrollHeight;
-          }
-        } catch (e) {}
-      }
-    }
-
-    streamingEl.classList.remove('streaming');
-    if (fullText) {
-      messages.push({ role: 'assistant', content: fullText });
+    if (settings.provider === 'gemini') {
+      await sendGemini(streamingEl);
     } else {
-      streamingEl.textContent = '(No response received)';
-      streamingEl.classList.add('error');
+      await sendOpenAI(streamingEl);
     }
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -152,6 +168,137 @@ async function sendMessage() {
   }
 }
 
+async function sendGemini(streamingEl) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?key=${settings.apiKey}&alt=sse`;
+
+  const contents = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : m.role,
+    parts: [{ text: m.content }],
+  }));
+
+  const body = {
+    contents,
+    systemInstruction: settings.systemPrompt ? { parts: [{ text: settings.systemPrompt }] } : undefined,
+  };
+
+  if (webSearchEnabled) {
+    body.tools = [{ googleSearch: {} }];
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: abortController.signal,
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Gemini API error ${res.status}: ${err.error?.message || res.statusText}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+
+      try {
+        const parsed = JSON.parse(data);
+        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) {
+          fullText += text;
+          streamingEl.textContent = fullText;
+          responseArea.scrollTop = responseArea.scrollHeight;
+        }
+      } catch (e) {}
+    }
+  }
+
+  streamingEl.classList.remove('streaming');
+  if (fullText) {
+    messages.push({ role: 'assistant', content: fullText });
+  } else {
+    streamingEl.textContent = '(No response received)';
+    streamingEl.classList.add('error');
+  }
+}
+
+async function sendOpenAI(streamingEl) {
+  const res = await fetch(settings.apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      messages: [
+        { role: 'system', content: settings.systemPrompt },
+        ...messages,
+      ],
+      stream: true,
+    }),
+    signal: abortController.signal,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`API error ${res.status}: ${err}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let fullText = '';
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || !trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') break;
+
+      try {
+        const parsed = JSON.parse(data);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          fullText += delta;
+          streamingEl.textContent = fullText;
+          responseArea.scrollTop = responseArea.scrollHeight;
+        }
+      } catch (e) {}
+    }
+  }
+
+  streamingEl.classList.remove('streaming');
+  if (fullText) {
+    messages.push({ role: 'assistant', content: fullText });
+  } else {
+    streamingEl.textContent = '(No response received)';
+    streamingEl.classList.add('error');
+  }
+}
+
 function appendMessage(text, type = '') {
   const el = document.createElement('div');
   el.className = `message ${type}`;
@@ -166,92 +313,79 @@ function autoResize() {
 }
 
 // Divider drag-to-resize
-let startY, startInputHeight, startResponseHeight;
-
 divider.addEventListener('mousedown', (e) => {
-  startY = e.clientY;
-  startInputHeight = inputSection.offsetHeight;
-  startResponseHeight = responseSection.offsetHeight;
+  const startY = e.clientY;
+  const startInputHeight = inputSection.offsetHeight;
+  const startResponseHeight = responseSection.offsetHeight;
   divider.classList.add('dragging');
   document.body.style.cursor = 'row-resize';
   document.body.style.userSelect = 'none';
   e.preventDefault();
-});
 
-document.addEventListener('mousemove', (e) => {
-  if (!divider.classList.contains('dragging')) return;
-  const dy = e.clientY - startY;
-  const containerHeight = document.getElementById('resizable-container').offsetHeight;
-  const totalHeight = startInputHeight + startResponseHeight;
-
-  let newInputHeight = startInputHeight + dy;
-  let newResponseHeight = startResponseHeight - dy;
-
-  const minHeight = 80;
-  if (newInputHeight < minHeight) {
-    newInputHeight = minHeight;
-    newResponseHeight = totalHeight - minHeight;
-  }
-  if (newResponseHeight < minHeight) {
-    newResponseHeight = minHeight;
-    newInputHeight = totalHeight - minHeight;
+  function onMove(ev) {
+    const dy = ev.clientY - startY;
+    const containerHeight = document.getElementById('resizable-container').offsetHeight;
+    const totalHeight = startInputHeight + startResponseHeight;
+    let newInputHeight = startInputHeight + dy;
+    let newResponseHeight = startResponseHeight - dy;
+    const minHeight = 80;
+    if (newInputHeight < minHeight) { newInputHeight = minHeight; newResponseHeight = totalHeight - minHeight; }
+    if (newResponseHeight < minHeight) { newResponseHeight = minHeight; newInputHeight = totalHeight - minHeight; }
+    const inputPercent = (newInputHeight / containerHeight) * 100;
+    const responsePercent = (newResponseHeight / containerHeight) * 100;
+    inputSection.style.flex = `1 1 ${inputPercent}%`;
+    responseSection.style.flex = `1 1 ${responsePercent}%`;
   }
 
-  const inputPercent = (newInputHeight / containerHeight) * 100;
-  const responsePercent = (newResponseHeight / containerHeight) * 100;
+  function onUp() {
+    divider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
 
-  inputSection.style.flex = `1 1 ${inputPercent}%`;
-  responseSection.style.flex = `1 1 ${responsePercent}%`;
-});
-
-document.addEventListener('mouseup', () => {
-  divider.classList.remove('dragging');
-  document.body.style.cursor = '';
-  document.body.style.userSelect = '';
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 });
 
 // Touch support for divider
 divider.addEventListener('touchstart', (e) => {
-  startY = e.touches[0].clientY;
-  startInputHeight = inputSection.offsetHeight;
-  startResponseHeight = responseSection.offsetHeight;
+  const startY = e.touches[0].clientY;
+  const startInputHeight = inputSection.offsetHeight;
+  const startResponseHeight = responseSection.offsetHeight;
   divider.classList.add('dragging');
   e.preventDefault();
-});
 
-document.addEventListener('touchmove', (e) => {
-  if (!divider.classList.contains('dragging')) return;
-  const dy = e.touches[0].clientY - startY;
-  const containerHeight = document.getElementById('resizable-container').offsetHeight;
-  const totalHeight = startInputHeight + startResponseHeight;
-
-  let newInputHeight = startInputHeight + dy;
-  let newResponseHeight = startResponseHeight - dy;
-
-  const minHeight = 80;
-  if (newInputHeight < minHeight) {
-    newInputHeight = minHeight;
-    newResponseHeight = totalHeight - minHeight;
-  }
-  if (newResponseHeight < minHeight) {
-    newResponseHeight = minHeight;
-    newInputHeight = totalHeight - minHeight;
+  function onMove(ev) {
+    const dy = ev.touches[0].clientY - startY;
+    const containerHeight = document.getElementById('resizable-container').offsetHeight;
+    const totalHeight = startInputHeight + startResponseHeight;
+    let newInputHeight = startInputHeight + dy;
+    let newResponseHeight = startResponseHeight - dy;
+    const minHeight = 80;
+    if (newInputHeight < minHeight) { newInputHeight = minHeight; newResponseHeight = totalHeight - minHeight; }
+    if (newResponseHeight < minHeight) { newResponseHeight = minHeight; newInputHeight = totalHeight - minHeight; }
+    const inputPercent = (newInputHeight / containerHeight) * 100;
+    const responsePercent = (newResponseHeight / containerHeight) * 100;
+    inputSection.style.flex = `1 1 ${inputPercent}%`;
+    responseSection.style.flex = `1 1 ${responsePercent}%`;
   }
 
-  const inputPercent = (newInputHeight / containerHeight) * 100;
-  const responsePercent = (newResponseHeight / containerHeight) * 100;
+  function onEnd() {
+    divider.classList.remove('dragging');
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onEnd);
+  }
 
-  inputSection.style.flex = `1 1 ${inputPercent}%`;
-  responseSection.style.flex = `1 1 ${responsePercent}%`;
-});
-
-document.addEventListener('touchend', () => {
-  divider.classList.remove('dragging');
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onEnd);
 });
 
 // Events
 sendBtn.addEventListener('click', sendMessage);
 clearBtn.addEventListener('click', clearResponse);
+searchToggle.addEventListener('click', toggleWebSearch);
 
 userInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
@@ -261,6 +395,18 @@ userInput.addEventListener('keydown', (e) => {
 });
 
 userInput.addEventListener('input', autoResize);
+
+providerSelect.addEventListener('change', () => {
+  settings.provider = providerSelect.value;
+  updateModelOptions();
+  updateProviderUI();
+  updateSearchUI();
+  if (settings.provider === 'gemini') {
+    modelSelect.value = 'gemini-2.5-flash';
+  } else {
+    modelSelect.value = 'gpt-4o-mini';
+  }
+});
 
 settingsBtn.addEventListener('click', () => {
   settingsModal.hidden = false;
@@ -286,7 +432,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 installBtn.addEventListener('click', async () => {
   if (!deferredPrompt) return;
   deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
+  await deferredPrompt.userChoice;
   deferredPrompt = null;
   installBtn.hidden = true;
 });

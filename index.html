@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#1a1a2e" />
-  <meta name="description" content="AI Chat PWA" />
+  <meta name="description" content="AI Chat PWA with Gemini and Web Search" />
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>AI Chat</title>
@@ -15,6 +15,7 @@
     <header>
       <h1>AI Chat</h1>
       <div class="header-actions">
+        <button id="search-toggle" title="Toggle Web Search">&#128269;</button>
         <button id="settings-btn" title="Settings">&#9881;</button>
         <button id="install-btn" title="Install PWA" hidden>&#10515;</button>
       </div>
@@ -24,7 +25,10 @@
       <section id="input-section">
         <div class="section-label">
           <span>Input</span>
-          <button id="send-btn" title="Send">&#10148;</button>
+          <div class="section-actions">
+            <span id="search-badge" class="badge" hidden>Search ON</span>
+            <button id="send-btn" title="Send">&#10148;</button>
+          </div>
         </div>
         <textarea id="user-input" placeholder="Type your message here..."></textarea>
       </section>
@@ -47,16 +51,23 @@
     <div class="modal-content">
       <h2>Settings</h2>
       <div class="setting-row">
+        <label for="provider">Provider</label>
+        <select id="provider">
+          <option value="gemini">Google Gemini</option>
+          <option value="openai">OpenAI / Compatible</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label for="api-key">API Key</label>
+        <input type="password" id="api-key" placeholder="Enter your API key" />
+      </div>
+      <div class="setting-row" id="api-url-row" hidden>
         <label for="api-url">API Endpoint</label>
         <input type="text" id="api-url" placeholder="https://api.openai.com/v1/chat/completions" />
       </div>
       <div class="setting-row">
-        <label for="api-key">API Key</label>
-        <input type="password" id="api-key" placeholder="sk-..." />
-      </div>
-      <div class="setting-row">
         <label for="model">Model</label>
-        <input type="text" id="model" placeholder="gpt-4o-mini" />
+        <select id="model"></select>
       </div>
       <div class="setting-row">
         <label for="system-prompt">System Prompt</label>

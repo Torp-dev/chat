@@ -124,6 +124,23 @@ header h1 {
   background: var(--border);
 }
 
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 #user-input {
   flex: 1;
   background: var(--bg);
@@ -257,6 +274,24 @@ header h1 {
 
 .setting-row input:focus,
 .setting-row textarea:focus {
+  border-color: var(--accent);
+}
+
+.setting-row select {
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s;
+  appearance: auto;
+}
+
+.setting-row select:focus {
   border-color: var(--accent);
 }
 
