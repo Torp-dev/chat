@@ -1,4 +1,4 @@
-const BUILD = 'v7';
+const BUILD = 'v8';
 
 const userInput = document.getElementById('user-input');
 const responseArea = document.getElementById('response-area');
@@ -38,23 +38,72 @@ const GEMINI_MODELS = [
   { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash' },
 ];
 
-const KILO_MODELS = [
-  { id: 'anthropic/claude-opus-4.7', name: 'Claude Opus 4.7' },
-  { id: 'anthropic/claude-sonnet-4.6', name: 'Claude Sonnet 4.6' },
-  { id: 'anthropic/claude-haiku-4.5', name: 'Claude Haiku 4.5' },
-  { id: 'openai/gpt-5.4', name: 'GPT-5.4' },
-  { id: 'openai/gpt-5.4-mini', name: 'GPT-5.4 Mini' },
-  { id: 'google/gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
-  { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-  { id: 'x-ai/grok-4', name: 'Grok 4' },
-  { id: 'deepseek/deepseek-v3.2', name: 'DeepSeek V3.2' },
-  { id: 'moonshotai/kimi-k2.5', name: 'Kimi K2.5' },
-  { id: 'kilo-auto/frontier', name: 'Auto Frontier' },
+const KILO_MODELS_FALLBACK = [
   { id: 'kilo-auto/efficient', name: 'Auto Efficient' },
   { id: 'kilo-auto/free', name: 'Auto Free' },
-  { id: 'stepfun/step-3.7-flash:free', name: 'Step 3.7 Flash (Free)' },
-  { id: 'openrouter/free', name: 'OpenRouter Free' },
+  { id: 'kilo-auto/frontier', name: 'Auto Frontier' },
 ];
+
+let kiloModelsCache = null;
+let kiloModelsLoading = null;
+
+async function fetchKiloModels() {
+  if (kiloModelsCache) return kiloModelsCache;
+  if (kiloModelsLoading) return kiloModelsLoading;
+
+  kiloModelsLoading = (async () => {
+    try {
+      const res = await fetch('https://api.kilo.ai/api/gateway/models');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const models = (data.data || []).map(m => ({
+        id: m.id,
+        name: m.name || m.id,
+      }));
+      kiloModelsCache = models;
+      debugLog(`Fetched ${models.length} Kilo models`, 'info');
+      return models;
+    } catch (e) {
+      debugLog(`Failed to fetch Kilo models: ${e.message}. Using fallback.`, 'error');
+      kiloModelsCache = KILO_MODELS_FALLBACK;
+      return KILO_MODELS_FALLBACK;
+    }
+  })();
+
+  return kiloModelsLoading;
+}
+
+let geminiModelsCache = null;
+let geminiModelsLoading = null;
+
+async function fetchGeminiModels(apiKey) {
+  if (geminiModelsCache) return geminiModelsCache;
+  if (geminiModelsLoading) return geminiModelsLoading;
+
+  geminiModelsLoading = (async () => {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const models = (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => ({
+          id: m.name.replace('models/', ''),
+          name: m.displayName || m.name.replace('models/', ''),
+        }));
+      geminiModelsCache = models;
+      debugLog(`Fetched ${models.length} Gemini models`, 'info');
+      return models;
+    } catch (e) {
+      debugLog(`Failed to fetch Gemini models: ${e.message}. Using fallback.`, 'error');
+      geminiModelsCache = GEMINI_MODELS;
+      return GEMINI_MODELS;
+    }
+  })();
+
+  return geminiModelsLoading;
+}
 
 const OPENAI_MODELS = [
   { id: 'gpt-4o', name: 'GPT-4o' },
@@ -89,7 +138,7 @@ function debugLog(msg, type = 'info') {
   }
 }
 
-function loadSettings() {
+async function loadSettings() {
   try {
     const saved = localStorage.getItem('ai-chat-settings');
     if (saved) {
@@ -106,9 +155,12 @@ function loadSettings() {
   document.getElementById('api-key').value = settings.apiKey;
   document.getElementById('api-url').value = settings.apiUrl;
   document.getElementById('system-prompt').value = settings.systemPrompt;
-  updateModelList();
-  if (!settings.model || !getModelById(settings.model)) {
-    settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
+
+  await updateModelList();
+
+  const models = await getModelsForProvider();
+  if (!settings.model || !getModelById(settings.model, models)) {
+    settings.model = (models[0] || { id: 'kilo-auto/efficient' }).id;
   }
   selectModelInUI(settings.model);
   updateProviderUI();
@@ -116,18 +168,22 @@ function loadSettings() {
   debugLog(`Build ${BUILD} loaded: provider=${settings.provider} model=${settings.model} keySet=${!!settings.apiKey}`, 'info');
 }
 
-function getModelsForProvider() {
-  if (settings.provider === 'gemini') return GEMINI_MODELS;
-  if (settings.provider === 'kilo') return KILO_MODELS;
+async function getModelsForProvider() {
+  if (settings.provider === 'gemini') {
+    return await fetchGeminiModels(settings.apiKey);
+  }
+  if (settings.provider === 'kilo') {
+    return await fetchKiloModels();
+  }
   return OPENAI_MODELS;
 }
 
-function getModelById(id) {
-  return getModelsForProvider().find(m => m.id === id);
+function getModelById(id, models) {
+  return models.find(m => m.id === id);
 }
 
-function updateModelList() {
-  const models = getModelsForProvider();
+async function updateModelList() {
+  const models = await getModelsForProvider();
   modelList.innerHTML = '';
   models.forEach(m => {
     const row = document.createElement('label');
@@ -154,13 +210,14 @@ function selectModelInUI(id) {
   radios.forEach(r => r.checked = (r.value === id));
 }
 
-function saveSettings() {
+async function saveSettings() {
   settings.provider = providerSelect.value;
   settings.apiKey = document.getElementById('api-key').value.trim();
   settings.apiUrl = document.getElementById('api-url').value.trim() || settings.apiUrl;
   settings.systemPrompt = document.getElementById('system-prompt').value.trim() || settings.systemPrompt;
-  if (!settings.model || !getModelById(settings.model)) {
-    settings.model = (KILO_MODELS[0] || GEMINI_MODELS[0] || OPENAI_MODELS[0]).id;
+  const models = await getModelsForProvider();
+  if (!settings.model || !getModelById(settings.model, models)) {
+    settings.model = (models[0] || { id: 'kilo-auto/efficient' }).id;
   }
   try {
     localStorage.setItem('ai-chat-settings', JSON.stringify(settings));
@@ -451,15 +508,14 @@ userInput.addEventListener('keydown', (e) => {
 
 userInput.addEventListener('input', autoResize);
 
-providerSelect.addEventListener('change', () => {
+providerSelect.addEventListener('change', async () => {
   settings.provider = providerSelect.value;
-  let def = 'kilo-auto/efficient';
-  if (settings.provider === 'gemini') def = 'gemini-2.5-flash';
-  else if (settings.provider === 'openai') def = 'gpt-4o-mini';
-  settings.model = def;
-  updateModelList();
+  const models = await getModelsForProvider();
+  settings.model = (models[0] || { id: 'kilo-auto/efficient' }).id;
   updateProviderUI();
   updateSearchUI();
+  await updateModelList();
+  selectModelInUI(settings.model);
 });
 
 settingsBtn.addEventListener('click', () => {
